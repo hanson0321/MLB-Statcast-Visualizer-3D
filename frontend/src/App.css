@@ -1,0 +1,3 @@
+/* frontend/src/App.css */
+/* All styles are now handled by Tailwind CSS via index.css */
+/* This file can be empty, but we keep it to avoid breaking the import in older files if they exist. */
