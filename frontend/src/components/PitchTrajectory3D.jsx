@@ -1,66 +1,67 @@
 // frontend/src/components/PitchTrajectory3D.jsx
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Canvas } from '@react-three/fiber';
-import { OrbitControls, Text, Box, Sphere, Tube, Plane, Cylinder, Shape, Extrude } from '@react-three/drei';
+import { OrbitControls, Text, Box, Sphere, Tube, Plane, Cylinder, Shape, Extrude, Line } from '@react-three/drei';
 import * as THREE from 'three';
 
-// 1. 顏色與球種對應表
+// 顏色與球種對應表
 const pitchColorMap = {
-    'FF': { name: '四縫線快速球', color: '#ff4d4d' },
-    'FA': { name: '快速球', color: '#ff4d4d' },
-    'SL': { name: '滑球', color: '#4da6ff' },
-    'ST': { name: '橫掃滑球', color: '#4da6ff' },
-    'SV': { name: '曲滑球', color: '#4da6ff' },
-    'CU': { name: '曲球', color: '#ffff66' },
-    'KC': { name: '彈指曲球', color: '#ffff66' },
-    'CH': { name: '變速球', color: '#33cc33' },
-    'SI': { name: '伸卡球', color: '#ff8c1a' },
-    'FT': { name: '二縫線快速球', color: '#ff8c1a' },
-    'FC': { name: '卡特球', color: '#9966ff' },
-    'FS': { name: '指叉球', color: '#ff66b3' },
+    'FF': { name: '四縫線快速球', color: '#d9534f' },
+    'SI': { name: '伸卡球', color: '#f0ad4e' },
+    'FT': { name: '二縫線快速球', color: '#f0ad4e' },
+    'FC': { name: '卡特球', color: '#5bc0de' },
+    'SL': { name: '滑球', color: '#5bc0de' },
+    'ST': { name: '橫掃滑球', color: '#5bc0de' },
+    'SV': { name: '曲滑球', color: '#5bc0de' },
+    'CU': { name: '曲球', color: '#428bca' },
+    'KC': { name: '彈指曲球', color: '#428bca' },
+    'CH': { name: '變速球', color: '#5cb85c' },
+    'FS': { name: '指叉球', color: '#5cb85c' },
 };
 
 const getPitchColor = (pitchType) => pitchColorMap[pitchType]?.color || '#ffffff';
 
-// 【新功能】2. 球路圖例元件
+// 球路圖例元件
 const PitchLegend = () => (
     <div style={{
         position: 'absolute',
         top: '20px',
         left: '20px',
-        background: 'rgba(0, 0, 0, 0.5)',
+        background: 'rgba(255, 255, 255, 0.85)',
         padding: '10px',
         borderRadius: '8px',
-        color: 'white',
+        color: '#333',
         fontFamily: 'sans-serif',
         fontSize: '12px',
         maxWidth: '180px',
+        pointerEvents: 'none',
+        border: '1px solid #ccc'
     }}>
-        <h4 style={{ margin: '0 0 10px 0', borderBottom: '1px solid #555' }}>球路圖例</h4>
+        <h4 style={{ margin: '0 0 10px 0', borderBottom: '1px solid #ccc', paddingBottom: '5px' }}>Pitch Type</h4>
         {Object.entries(pitchColorMap).map(([abbr, { name, color }]) => (
             <div key={abbr} style={{ display: 'flex', alignItems: 'center', marginBottom: '5px' }}>
                 <div style={{ width: '12px', height: '12px', backgroundColor: color, marginRight: '8px', borderRadius: '2px' }}></div>
-                <span>{name} ({abbr})</span>
+                <span>{name.split(' ')[0]} ({abbr})</span>
             </div>
         ))}
     </div>
 );
 
-
-// 3. 好球帶元件 (維持不變)
+// 好球帶元件
 const StrikeZoneBox = ({ top, bottom }) => {
   const PLATE_WIDTH = 1.42;
   const height = top - bottom;
   return (
     <Box args={[PLATE_WIDTH, height, 0.1]} position={[0, bottom + height / 2, 0]}>
-      <meshStandardMaterial color="#ffffff" emissive="#00aaff" transparent opacity={0.15} />
+      <meshBasicMaterial color="#333" transparent opacity={0.3} />
     </Box>
   );
 };
 
-// 4. 單一投球軌跡 + 球點元件 (維持不變)
+// 單一投球軌跡 + 球點 + 球速顯示元件
 const Pitch = ({ pitch }) => {
+  const [hovered, setHovered] = useState(false);
   const color = getPitchColor(pitch.pitch_type);
   const curve = useMemo(() => {
     const start = new THREE.Vector3(pitch.release_pos_x, pitch.release_pos_z, pitch.release_pos_y);
@@ -70,18 +71,35 @@ const Pitch = ({ pitch }) => {
   }, [pitch]);
 
   return (
-    <group>
-      <Tube args={[curve, 20, 0.015, 8, false]}>
-        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.8} toneMapped={false} />
+    <group
+      onPointerOver={(e) => { e.stopPropagation(); setHovered(true); }}
+      onPointerOut={() => setHovered(false)}
+    >
+      <Tube args={[curve, 20, 0.02, 8, false]}>
+        <meshBasicMaterial color={color} transparent opacity={hovered ? 1 : 0.7} toneMapped={false} />
       </Tube>
-      <Sphere args={[0.08, 32, 32]} position={[pitch.plate_x, pitch.plate_z, 0]}>
-        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={2} toneMapped={false}/>
+      <Sphere args={[0.085, 32, 32]} position={[pitch.plate_x, pitch.plate_z, 0]}>
+        <meshBasicMaterial color={color}/>
       </Sphere>
+      {hovered && (
+        <Text
+          position={[pitch.plate_x, pitch.plate_z + 0.3, 0]}
+          fontSize={0.25}
+          color="black"
+          anchorX="center"
+          backgroundColor="white"
+          backgroundOpacity={0.8}
+          padding={0.05}
+          borderRadius={0.05}
+        >
+          {`${pitch.release_speed.toFixed(1)} mph`}
+        </Text>
+      )}
     </group>
   );
 };
 
-// 5. 本壘板元件 (維持不變)
+// 本壘板元件
 const HomePlate = () => {
     const shape = useMemo(() => {
         const s = new THREE.Shape();
@@ -89,142 +107,93 @@ const HomePlate = () => {
         s.lineTo(-0.708, -0.354); s.lineTo(-0.708, 0); s.lineTo(0, 0.708);
         return s;
     }, []);
-    const extrudeSettings = { steps: 1, depth: 0.1, bevelEnabled: false };
+    const extrudeSettings = { steps: 1, depth: 0.05, bevelEnabled: false };
     return (
-        <Extrude args={[shape, extrudeSettings]} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0.354]} castShadow>
-            <meshStandardMaterial color="white" />
+        <Extrude args={[shape, extrudeSettings]} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.025, 0.354]}>
+            <meshBasicMaterial color="#ffffff" />
         </Extrude>
     );
 };
 
-// 6. 球員模型元件 (加入姓名)
-const HumanoidModel = ({ position, name, isPitcher = false }) => {
-    const bodyColor = "#334155";
-    const headColor = "#fde047";
-    const hatColor = isPitcher ? "#dc2626" : "#1e3a8a";
-    const batterStanceRotation = isPitcher ? [0, 0, 0] : [0, 0.2, 0];
+// 球場環境元件
+const BaseballField = () => {
+    const BatterBox = ({ position, width, height }) => {
+        const points = [
+            new THREE.Vector3(-width/2, 0, -height/2), new THREE.Vector3(width/2, 0, -height/2),
+            new THREE.Vector3(width/2, 0, height/2), new THREE.Vector3(-width/2, 0, height/2),
+            new THREE.Vector3(-width/2, 0, -height/2)
+        ];
+        return <Line points={points} color="white" lineWidth={2} position={position} rotation={[-Math.PI / 2, 0, 0]} />;
+    };
 
     return (
-        <group position={position} rotation={batterStanceRotation}>
-            {/* 【新功能】在背後顯示球員姓名 */}
-            <Text
-                position={[0, 1.8, -0.3]}
-                rotation={[0, 0, 0]}
-                fontSize={0.25}
-                color="white"
-                anchorX="center"
-            >
-                {name.toUpperCase()}
-            </Text>
-            <mesh position={[0, 1.25, 0]} castShadow>
-                <boxGeometry args={[0.8, 1.5, 0.5]} />
-                <meshStandardMaterial color={bodyColor} />
-            </mesh>
-            <mesh position={[-0.2, 0.4, 0]} rotation={isPitcher ? [0,0,0] : [0,0,0.1]} castShadow>
-                <cylinderGeometry args={[0.15, 0.1, 0.8]} />
-                <meshStandardMaterial color={bodyColor} />
-            </mesh>
-            <mesh position={[0.2, 0.4, 0]} rotation={isPitcher ? [0,0,0] : [0,0,-0.1]} castShadow>
-                <cylinderGeometry args={[0.15, 0.1, 0.8]} />
-                <meshStandardMaterial color={bodyColor} />
-            </mesh>
-            <mesh position={[0, 2.2, 0]} rotation={isPitcher ? [0,0,0] : [0, 0.4, 0]} castShadow>
-                <sphereGeometry args={[0.3, 16, 16]} />
-                <meshStandardMaterial color={headColor} />
-            </mesh>
-            <group position={[0, 2.4, 0]} rotation={isPitcher ? [0,0,0] : [0, 0.4, 0]}>
-                 <mesh castShadow>
-                    <cylinderGeometry args={[0.35, 0.35, 0.2]} />
-                    <meshStandardMaterial color={hatColor} />
-                 </mesh>
-                <mesh position={[0, -0.1, 0.3]} castShadow>
-                     <boxGeometry args={[0.7, 0.1, 0.4]} />
-                    <meshStandardMaterial color={hatColor} />
-                </mesh>
-            </group>
-            {isPitcher ? (
-                <mesh position={[-0.6, 1.6, 0]} rotation={[0, 0, 0.5]} castShadow>
-                    <cylinderGeometry args={[0.1, 0.08, 1.2]} />
-                    <meshStandardMaterial color={bodyColor} />
-                </mesh>
-            ) : (
-                <>
-                    <group position={[-0.2, 1.7, 0.2]}>
-                        <mesh rotation={[0,0,1.8]}>
-                            <cylinderGeometry args={[0.1, 0.08, 0.7]} />
-                            <meshStandardMaterial color={bodyColor} />
-                        </mesh>
-                        <mesh position={[0.3, -0.5, 0]} rotation={[0,0,0.5]}>
-                            <cylinderGeometry args={[0.08, 0.06, 0.6]} />
-                            <meshStandardMaterial color={bodyColor} />
-                        </mesh>
-                    </group>
-                     <group position={[0.2, 1.7, 0.2]}>
-                        <mesh rotation={[0,0,-1.8]}>
-                            <cylinderGeometry args={[0.1, 0.08, 0.7]} />
-                            <meshStandardMaterial color={bodyColor} />
-                        </mesh>
-                        <mesh position={[-0.3, -0.5, 0]} rotation={[0,0,-0.5]}>
-                            <cylinderGeometry args={[0.08, 0.06, 0.6]} />
-                            <meshStandardMaterial color={bodyColor} />
-                        </mesh>
-                    </group>
-                    <mesh position={[0.2, 1.8, 0.2]} rotation={[1.8, 0.8, -0.5]} castShadow>
-                        <cylinderGeometry args={[0.06, 0.1, 3.5]} />
-                        <meshStandardMaterial color="#854d0e" />
-                    </mesh>
-                </>
-            )}
+        <group>
+            <Plane args={[200, 200]} rotation={[-Math.PI / 2, 0, 0]}>
+                <meshBasicMaterial color="#d1d5db" />
+            </Plane>
+            <Cylinder args={[45, 45, 0.015, 64]} position={[0, 0.005, 45]}>
+                <meshBasicMaterial color="#65a30d" />
+            </Cylinder>
+            <Cylinder args={[13, 13, 0.02, 64]} position={[0, 0.01, 0]}>
+                <meshBasicMaterial color="#9ca3af" />
+            </Cylinder>
+            <Cylinder args={[9, 9, 0.5, 64]} position={[0, 0.25, 60.5]}>
+                <meshBasicMaterial color="#9ca3af" />
+            </Cylinder>
+            <Box args={[0.2, 0.03, 150]} position={[-35.35, 0.015, 35.35]} rotation={[0, 0.785, 0]} >
+                 <meshBasicMaterial color="white" />
+            </Box>
+             <Box args={[0.2, 0.03, 150]} position={[35.35, 0.015, 35.35]} rotation={[0, -0.785, 0]} >
+                 <meshBasicMaterial color="white" />
+            </Box>
+            <BatterBox position={[-4, 0.02, 0]} width={4} height={6} />
+            <BatterBox position={[4, 0.02, 0]} width={4} height={6} />
+            <Cylinder args={[2.5, 2.5, 0.02, 64]} position={[-10, 0.01, -10]}>
+                <meshBasicMaterial color="#9ca3af" />
+            </Cylinder>
+             <Cylinder args={[2.5, 2.5, 0.02, 64]} position={[10, 0.01, -10]}>
+                <meshBasicMaterial color="#9ca3af" />
+            </Cylinder>
         </group>
     );
 };
 
-// 7. 主元件：整合所有 3D 元素
+
+// 【錯誤修正】將元件改為 named export，以匹配 App.jsx 中的 import 方式
 export const PitchTrajectory3D = ({ data, pitcherName, batterName }) => {
-  const { avgStrikeZone, pitcherPosition, batterPosition } = useMemo(() => {
-    if (!data || data.length === 0) {
-      return {
-        avgStrikeZone: { top: 3.5, bottom: 1.5 },
-        pitcherPosition: new THREE.Vector3(0, 0, 60.5),
-        batterPosition: new THREE.Vector3(-1.5, 0, 0.5),
-      };
-    }
-    const firstPitch = data[0];
+  const avgStrikeZone = useMemo(() => {
+    if (!data || data.length === 0) return { top: 3.5, bottom: 1.5 };
     const totalTop = data.reduce((sum, p) => sum + p.sz_top, 0);
     const totalBottom = data.reduce((sum, p) => sum + p.sz_bot, 0);
-    const pPos = new THREE.Vector3(firstPitch.release_pos_x, 0, firstPitch.release_pos_y);
     return {
-      avgStrikeZone: { top: totalTop / data.length, bottom: totalBottom / data.length },
-      pitcherPosition: pPos,
-      batterPosition: new THREE.Vector3(-1.5, 0, 0.5),
+      top: totalTop / data.length,
+      bottom: totalBottom / data.length,
     };
   }, [data]);
-  
-  const pitcherLastName = pitcherName.split(' ').pop();
-  const batterLastName = batterName.split(' ').pop();
 
   return (
-    <div style={{ position: 'relative', height: '600px', width: '100%', background: '#111827', borderRadius: '8px', cursor: 'grab' }}>
-      <Canvas camera={{ position: [0, 6, 35], fov: 45 }} shadows>
-        <ambientLight intensity={0.7} />
-        <directionalLight position={[10, 20, 5]} intensity={1.5} castShadow shadow-mapSize-width={2048} shadow-mapSize-height={2048} />
-        <Plane args={[100, 100]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-            <meshStandardMaterial color="#052e16" />
-        </Plane>
-        <Cylinder args={[9, 9, 0.5, 64]} position={[0, 0.25, 60.5]} receiveShadow>
-            <meshStandardMaterial color="#b45309" />
-        </Cylinder>
+    <div style={{ position: 'relative', height: '600px', width: '100%', background: '#a3a3a3', borderRadius: '8px', cursor: 'grab' }}>
+      <Canvas camera={{ position: [0, 50, 0.1], fov: 45 }} shadows={false}>
+        <ambientLight intensity={5} />
+        
+        <BaseballField />
         <HomePlate />
-        <HumanoidModel position={batterPosition} name={batterLastName} />
-        <HumanoidModel position={pitcherPosition} name={pitcherLastName} isPitcher={true} />
         <StrikeZoneBox top={avgStrikeZone.top} bottom={avgStrikeZone.bottom} />
+        
         {data.map((pitch, index) => (
           <Pitch key={index} pitch={pitch} />
         ))}
-        <OrbitControls minDistance={5} maxDistance={80} target={[0, 2, 0]} enablePan={false} />
+
+        <OrbitControls 
+            minDistance={10} 
+            maxDistance={120}
+            target={[0, 2, 0]}
+            minPolarAngle={0}
+            maxPolarAngle={Math.PI / 2.1}
+            enablePan={false}
+        />
       </Canvas>
       <PitchLegend />
     </div>
   );
 };
-
