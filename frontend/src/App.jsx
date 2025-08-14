@@ -67,7 +67,7 @@ const Leaderboards = () => {
     const fetchLeaderboards = async () => {
       setLoading(true);
       try {
-        const response = await fetch(`http://127.0.0.1:8000/api/leaderboards`);
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/leaderboards`);
         const result = await response.json();
         setData(result);
       } catch (error) {
@@ -134,8 +134,8 @@ function App() {
     const fetchInitialImages = async () => {
       try {
         const [pitcherRes, batterRes] = await Promise.all([
-          fetch(`http://127.0.0.1:8000/api/player-info?name=Shohei%20Ohtani`),
-          fetch(`http://127.0.0.1:8000/api/player-info?name=Aaron%20Judge`)
+          fetch(`${import.meta.env.VITE_API_URL}/api/player-info?name=Shohei%20Ohtani`),
+          fetch(`${import.meta.env.VITE_API_URL}/api/player-info?name=Aaron%20Judge`)
         ]);
         const pitcherData = await pitcherRes.json();
         const batterData = await batterRes.json();
@@ -169,16 +169,16 @@ function App() {
       const batterQuery = encodeURIComponent(batterName);
       
       const responses = await Promise.all([
-        fetch(`http://127.0.0.1:8000/api/player-season-stats?player_name=${pitcherQuery}`),
-        fetch(`http://127.0.0.1:8000/api/player-season-stats?player_name=${batterQuery}`),
-        fetch(`http://127.0.0.1:8000/api/pitch-arsenal?pitcher=${pitcherQuery}`),
-        fetch(`http://127.0.0.1:8000/api/pvb-stats?pitcher=${pitcherQuery}&batter=${batterQuery}`),
-        fetch(`http://127.0.0.1:8000/api/at-bat-timeline?pitcher=${pitcherQuery}&batter=${batterQuery}`),
-        fetch(`http://127.0.0.1:8000/api/outcome-simulator?pitcher=${pitcherQuery}&batter=${batterQuery}`),
-        fetch(`http://127.0.0.1:8000/api/pitch-movement?pitcher=${pitcherQuery}`),
-        fetch(`http://127.0.0.1:8000/api/league-avg-movement`),
-        fetch(`http://127.0.0.1:8000/api/3d-trajectory?pitcher=${pitcherQuery}&batter=${batterQuery}`),
-        fetch(`http://127.0.0.1:8000/api/pitch-strategy?pitcher_name=${pitcherQuery}&batter_name=${batterQuery}`),
+        fetch(`${import.meta.env.VITE_API_URL}/api/player-season-stats?player_name=${pitcherQuery}`),
+        fetch(`${import.meta.env.VITE_API_URL}/api/player-season-stats?player_name=${batterQuery}`),
+        fetch(`${import.meta.env.VITE_API_URL}/api/pitch-arsenal?pitcher=${pitcherQuery}`),
+        fetch(`${import.meta.env.VITE_API_URL}/api/pvb-stats?pitcher=${pitcherQuery}&batter=${batterQuery}`),
+        fetch(`${import.meta.env.VITE_API_URL}/api/at-bat-timeline?pitcher=${pitcherQuery}&batter=${batterQuery}`),
+        fetch(`${import.meta.env.VITE_API_URL}/api/outcome-simulator?pitcher=${pitcherQuery}&batter=${batterQuery}`),
+        fetch(`${import.meta.env.VITE_API_URL}/api/pitch-movement?pitcher=${pitcherQuery}`),
+        fetch(`${import.meta.env.VITE_API_URL}/api/league-avg-movement`),
+        fetch(`${import.meta.env.VITE_API_URL}/api/3d-trajectory?pitcher=${pitcherQuery}&batter=${batterQuery}`),
+        fetch(`${import.meta.env.VITE_API_URL}/api/pitch-strategy?pitcher_name=${pitcherQuery}&batter_name=${batterQuery}`),
       ]);
 
       for (const res of responses) { if (!res.ok) throw new Error("An error occurred while fetching data. Please try again."); }
