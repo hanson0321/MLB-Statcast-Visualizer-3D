@@ -285,7 +285,7 @@ function App() {
             </CardContent>
           </UpgradedAnimatedCard>
 
-          <Leaderboards />
+          {/* <Leaderboards /> */}
           
           <div ref={resultsRef}>
             <AnimatePresence>
