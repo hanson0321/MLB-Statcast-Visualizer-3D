@@ -10,6 +10,7 @@ import aiohttp
 import asyncio
 from functools import lru_cache
 from scipy.stats import percentileofscore
+import gc # 引入垃圾回收模組
 
 app = FastAPI()
 
@@ -17,6 +18,7 @@ app = FastAPI()
 origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "https://mlb-statcast-visualizer-3d.vercel.app", # 加入您 Vercel 前端的網址
 ]
 app.add_middleware(
     CORSMiddleware,
@@ -234,50 +236,6 @@ async def get_pitch_arsenal(pitcher: str):
         return arsenal.to_dict(orient='records')
     except Exception as e: return {"error": str(e)}
 
-@app.get("/api/pvb-pitch-chart")
-async def get_pvb_pitch_chart(pitcher: str, batter: str):
-    pitcher_info = await get_player_info_by_name(pitcher)
-    batter_info = await get_player_info_by_name(batter)
-    if not pitcher_info or not batter_info: return {"error": "無效的球員姓名"}
-    try:
-        data = statcast_pitcher('2017-01-01', '2025-12-31', int(pitcher_info['key_mlbam']))
-        matchup_data = data[data['batter'] == int(batter_info['key_mlbam'])].copy()
-        if matchup_data.empty: return []
-        
-        chart_data = matchup_data[['plate_x', 'plate_z', 'description', 'pitch_name', 'release_speed']].copy().replace({np.nan: None})
-        return chart_data.to_dict(orient='records')
-    except Exception as e: return {"error": str(e)}
-
-@app.get("/api/pvb-spray-chart")
-async def get_pvb_spray_chart(pitcher: str, batter: str):
-    pitcher_info = await get_player_info_by_name(pitcher)
-    batter_info = await get_player_info_by_name(batter)
-    if not pitcher_info or not batter_info: return {"error": "無效的球員姓名"}
-    try:
-        data = statcast_pitcher('2017-01-01', '2025-12-31', int(pitcher_info['key_mlbam']))
-        matchup_data = data[data['batter'] == int(batter_info['key_mlbam'])].copy()
-        batted_balls = matchup_data[matchup_data['type'] == 'X'].copy()
-        if batted_balls.empty: return []
-        
-        chart_data = batted_balls[['hc_x', 'hc_y', 'events', 'launch_speed', 'launch_angle']].copy().replace({np.nan: None})
-        return chart_data.to_dict(orient='records')
-    except Exception as e: return {"error": str(e)}
-
-@app.get("/api/pitch-movement")
-async def get_pitch_movement(pitcher: str):
-    pitcher_info = await get_player_info_by_name(pitcher)
-    if not pitcher_info: return {"error": f"找不到投手 '{pitcher}' 的 ID"}
-    try:
-        current_year = datetime.now().year
-        data = statcast_pitcher(f'{current_year}-01-01', f'{current_year}-12-31', int(pitcher_info['key_mlbam']))
-        movement_data = data[['pitch_name', 'pfx_x', 'pfx_z']].dropna().copy()
-        if movement_data.empty: return []
-        
-        movement_data['pfx_x_in'] = movement_data['pfx_x'] * 12
-        movement_data['pfx_z_in'] = movement_data['pfx_z'] * 12
-        return movement_data[['pitch_name', 'pfx_x_in', 'pfx_z_in']].to_dict(orient='records')
-    except Exception as e: return {"error": str(e)}
-
 @app.get("/api/3d-trajectory")
 async def get_3d_trajectory(pitcher: str, batter: str):
     pitcher_info = await get_player_info_by_name(pitcher)
@@ -297,15 +255,6 @@ async def get_3d_trajectory(pitcher: str, batter: str):
     except Exception as e:
         print(f"取得 3D 軌跡數據時發生錯誤: {e}")
         return {"error": str(e)}
-
-@app.get("/api/league-avg-movement")
-def get_league_avg_movement():
-    return {
-        "4-Seam Fastball": {"pfx_x_in": -5.0, "pfx_z_in": 8.5}, "Sinker": {"pfx_x_in": -9.0, "pfx_z_in": 5.0},
-        "Cutter": {"pfx_x_in": -1.0, "pfx_z_in": 7.0}, "Slider": {"pfx_x_in": 5.0, "pfx_z_in": 1.0},
-        "Sweeper": {"pfx_x_in": 10.0, "pfx_z_in": -1.0}, "Curveball": {"pfx_x_in": 7.0, "pfx_z_in": -6.0},
-        "Changeup": {"pfx_x_in": -8.0, "pfx_z_in": 3.0}, "Split-Finger": {"pfx_x_in": -6.0, "pfx_z_in": 1.5},
-    }
 
 @app.get("/api/player-radar-stats")
 async def get_player_radar_stats(player_name: str):
@@ -364,6 +313,62 @@ async def get_player_radar_stats(player_name: str):
 
     raise HTTPException(status_code=404, detail="在投打數據中都找不到該球員")
 
+@app.get("/api/pitch-strategy")
+async def get_pitch_strategy(pitcher_name: str, batter_name: str):
+    pitcher_info = await get_player_info_by_name(pitcher_name)
+    batter_info = await get_player_info_by_name(batter_name)
+    if not pitcher_info or not batter_info:
+        raise HTTPException(status_code=404, detail="無效的球員姓名")
+
+    try:
+        batter_stance = batter_info.get('bats')
+        if not batter_stance or batter_stance not in ['L', 'R']:
+            analysis_target = "所有打者"
+            target_stance = None
+        else:
+            analysis_target = f"所有右打者" if batter_stance == 'R' else f"所有左打者"
+            target_stance = batter_stance
+
+        current_year = datetime.now().year
+        data = statcast_pitcher(f'{current_year}-01-01', f'{current_year}-12-31', int(pitcher_info['key_mlbam']))
+
+        if target_stance:
+            strategy_data = data[data['stand'] == target_stance].copy()
+        else:
+            strategy_data = data.copy()
+
+        if strategy_data.empty:
+            return {"message": f"沒有足夠的數據來分析投手對 {analysis_target} 的策略"}
+
+        first_pitch_df = strategy_data[strategy_data['pitch_number'] == 1]
+        first_pitch_tendencies = (first_pitch_df['pitch_type'].value_counts(normalize=True) * 100).round(1).to_dict() if not first_pitch_df.empty else {}
+
+        two_strikes_df = strategy_data[strategy_data['strikes'] == 2]
+        two_strikes_tendencies = (two_strikes_df['pitch_type'].value_counts(normalize=True) * 100).round(1).to_dict() if not two_strikes_df.empty else {}
+
+        strikeout_pitches_df = strategy_data[strategy_data['events'] == 'strikeout']
+        strikeout_pitch = (strikeout_pitches_df['pitch_type'].value_counts(normalize=True) * 100).round(1).to_dict() if not strikeout_pitches_df.empty else {}
+
+        return {
+            "analysis_target": analysis_target,
+            "first_pitch": first_pitch_tendencies,
+            "two_strikes": two_strikes_tendencies,
+            "strikeout_pitch": strikeout_pitch,
+        }
+    except Exception as e:
+        print(f"分析投球策略時發生錯誤: {e}")
+        raise HTTPException(status_code=500, detail="分析投球策略時發生錯誤")
+
+@app.get("/api/player-info")
+async def get_player_basic_info(name: str):
+    player_info = await get_player_info_by_name(name)
+    if not player_info:
+        raise HTTPException(status_code=404, detail="Player not found")
+    return {
+        "name": player_info.get('name_first', '') + ' ' + player_info.get('name_last', ''),
+        "image_url": player_info.get('image_url')
+    }
+
 @app.get("/api/leaderboards")
 async def get_leaderboards():
     today = datetime.now()
@@ -386,7 +391,7 @@ async def get_leaderboards():
     
     start_date = (today - timedelta(days=7)).strftime('%Y-%m-%d')
     end_date = today.strftime('%Y-%m-%d')
-    message = f"data period: {start_date} - {end_date}"
+    message = f"數據期間: {start_date} 至 {end_date}"
     results = {"message": message}
     
     async def process_leaderboard_item(df, column, player_id_col, format_str, is_int=False, ascending=False):
@@ -421,14 +426,12 @@ async def get_leaderboards():
             "image_url": player_info.get('image_url') if player_info else None
         }
 
-  # Pitcher Stats
+    # 投手數據
     results["fastest_pitch"] = await process_leaderboard_item(data, 'release_speed', 'pitcher', "{value:.1f} mph")
-    
-    # 【BUG FIX & UPDATE】 Define strikeouts_df before using it and remove top_whiffer
     strikeouts_df = data[data['events'] == 'strikeout']
     results["most_strikeouts"] = await process_agg_leaderboard_item(strikeouts_df, 'pitcher', 'events', 'count', "{value} K's")
 
-    # Batter Stats
+    # 打者數據
     batted_balls = data.dropna(subset=['launch_speed', 'batter'])
     results["hardest_hit"] = await process_leaderboard_item(batted_balls, 'launch_speed', 'batter', "{value:.1f} mph")
     results["longest_homerun"] = await process_leaderboard_item(data[data['events'] == 'home_run'], 'hit_distance_sc', 'batter', "{value} ft", is_int=True)
@@ -438,72 +441,3 @@ async def get_leaderboards():
     results["most_homeruns"] = await process_agg_leaderboard_item(hr_df, 'batter', 'events', 'count', "{value} HR")
 
     return results
-
-@app.get("/api/pitch-strategy")
-async def get_pitch_strategy(pitcher_name: str, batter_name: str):
-    pitcher_info = await get_player_info_by_name(pitcher_name)
-    batter_info = await get_player_info_by_name(batter_name)
-    if not pitcher_info or not batter_info:
-        raise HTTPException(status_code=404, detail="無效的球員姓名")
-
-    try:
-        # 獲取打者的打擊慣用手 ('L' for Left, 'R' for Right)
-        batter_stance = batter_info.get('bats')
-        if not batter_stance or batter_stance not in ['L', 'R']:
-             # 如果是兩打或是資訊不足，則分析投手對決所有打者的平均策略
-            analysis_target = "所有打者"
-            target_stance = None
-        else:
-            analysis_target = f"所有右打者" if batter_stance == 'R' else f"所有左打者"
-            target_stance = batter_stance
-
-        # 只獲取當前賽季的數據，讓策略分析更具時效性
-        current_year = datetime.now().year
-        data = statcast_pitcher(f'{current_year}-01-01', f'{current_year}-12-31', int(pitcher_info['key_mlbam']))
-
-        if target_stance:
-            strategy_data = data[data['stand'] == target_stance].copy()
-        else:
-            strategy_data = data.copy()
-
-        if strategy_data.empty:
-            return {"message": f"沒有足夠的數據來分析投手對 {analysis_target} 的策略"}
-
-        # 1. 分析第一球 (搶好球數) 的策略
-        first_pitch_df = strategy_data[strategy_data['pitch_number'] == 1]
-        first_pitch_tendencies = {}
-        if not first_pitch_df.empty:
-            first_pitch_tendencies = (first_pitch_df['pitch_type'].value_counts(normalize=True) * 100).round(1).to_dict()
-
-        # 2. 分析兩好球後 (決勝球) 的策略
-        two_strikes_df = strategy_data[strategy_data['strikes'] == 2]
-        two_strikes_tendencies = {}
-        if not two_strikes_df.empty:
-            two_strikes_tendencies = (two_strikes_df['pitch_type'].value_counts(normalize=True) * 100).round(1).to_dict()
-
-        # 3. 分析造成三振的球路
-        strikeout_pitches_df = strategy_data[strategy_data['events'] == 'strikeout']
-        strikeout_pitch = {}
-        if not strikeout_pitches_df.empty:
-            strikeout_pitch = (strikeout_pitches_df['pitch_type'].value_counts(normalize=True) * 100).round(1).to_dict()
-
-
-        return {
-            "analysis_target": analysis_target, # 將分析對象傳給前端
-            "first_pitch": first_pitch_tendencies,
-            "two_strikes": two_strikes_tendencies,
-            "strikeout_pitch": strikeout_pitch,
-        }
-    except Exception as e:
-        print(f"分析投球策略時發生錯誤: {e}")
-        raise HTTPException(status_code=500, detail="分析投球策略時發生錯誤")
-
-@app.get("/api/player-info")
-async def get_player_basic_info(name: str):
-    player_info = await get_player_info_by_name(name)
-    if not player_info:
-        raise HTTPException(status_code=404, detail="Player not found")
-    return {
-        "name": player_info.get('name_first', '') + ' ' + player_info.get('name_last', ''),
-        "image_url": player_info.get('image_url')
-    }
